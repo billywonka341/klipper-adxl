@@ -1,0 +1,127 @@
+name: Build Klipper ESP32 Firmwares
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build for ${{ matrix.target.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - id: esp32
+            name: "Classic ESP32 (WROOM / DevKit v1)"
+            chip: esp32
+            config_file: configs/adxl_esp32_classic.cfg
+          - id: esp32s2
+            name: "ESP32-S2 (S2 Mini / DevKit)"
+            chip: esp32s2
+            config_file: configs/adxl_esp32_s2.cfg
+          - id: esp32s3
+            name: "ESP32-S3 (S3 Zero / Mini / DevKit)"
+            chip: esp32s3
+            config_file: configs/adxl_esp32_s3.cfg
+          - id: esp32c3
+            name: "ESP32-C3 (SuperMini / Mini)"
+            chip: esp32c3
+            config_file: configs/adxl_esp32_c3.cfg
+
+    container:
+      image: espressif/idf:release-v5.2
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build firmware for ${{ matrix.target.name }}
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          cd klipper_esp32
+          
+          # Clean previous build
+          rm -rf build sdkconfig
+          
+          # Configure target
+          idf.py set-target ${{ matrix.target.chip }}
+          
+          # Target-specific sdkconfig adjustments
+          if [ "${{ matrix.target.chip }}" = "esp32s2" ]; then
+            sed -i 's/CONFIG_ESP_CONSOLE_UART_DEFAULT=y/# CONFIG_ESP_CONSOLE_UART_DEFAULT is not set/' sdkconfig
+            echo "CONFIG_ESP_CONSOLE_USB_CDC=y" >> sdkconfig
+            echo "CONFIG_KLIPPER_CONSOLE_USB_CDC=y" >> sdkconfig
+          elif [ "${{ matrix.target.chip }}" = "esp32s3" ] || [ "${{ matrix.target.chip }}" = "esp32c3" ]; then
+            echo "CONFIG_KLIPPER_CONSOLE_USB_CDC=y" >> sdkconfig
+            echo "CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y" >> sdkconfig
+          else
+            echo "CONFIG_KLIPPER_CONSOLE_UART=y" >> sdkconfig
+            echo "CONFIG_KLIPPER_UART_BAUD_RATE=250000" >> sdkconfig
+          fi
+          
+          # Build project
+          idf.py build
+
+      - name: Package artifacts
+        shell: bash
+        run: |
+          PACKAGE_DIR="release_${{ matrix.target.id }}"
+          mkdir -p "$PACKAGE_DIR"
+          
+          # Copy binaries
+          cp klipper_esp32/build/klipper.bin "$PACKAGE_DIR/"
+          cp klipper_esp32/build/bootloader/bootloader.bin "$PACKAGE_DIR/"
+          cp klipper_esp32/build/partition_table/partition-table.bin "$PACKAGE_DIR/"
+          
+          # Copy matching Klipper config
+          if [ -f "${{ matrix.target.config_file }}" ]; then
+            cp "${{ matrix.target.config_file }}" "$PACKAGE_DIR/"
+          fi
+          
+          # Create automated flasher script for users
+          cat << 'EOF' > "$PACKAGE_DIR/flash.sh"
+#!/usr/bin/env bash
+PORT=${1:-/dev/ttyUSB0}
+echo "Flashing to port: $PORT"
+esptool.py --chip ${{ matrix.target.chip }} -p "$PORT" -b 460800 \
+  --before=default_reset --after=hard_reset write_flash \
+  --flash_mode dio --flash_freq 80m 0x1000 bootloader.bin 0x10000 klipper.bin 0x8000 partition-table.bin
+EOF
+          chmod +x "$PACKAGE_DIR/flash.sh"
+
+          # Create automated Windows flash.bat
+          cat << 'EOF' > "$PACKAGE_DIR/flash.bat"
+@echo off
+set PORT=%1
+if "%PORT%"=="" set PORT=COM3
+echo Flashing to port: %PORT%
+esptool.py --chip ${{ matrix.target.chip }} -p %PORT% -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_freq 80m 0x1000 bootloader.bin 0x10000 klipper.bin 0x8000 partition-table.bin
+pause
+EOF
+
+          # Zip package
+          zip -r "klipper_${{ matrix.target.id }}.zip" "$PACKAGE_DIR"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: klipper_${{ matrix.target.id }}
+          path: klipper_${{ matrix.target.id }}.zip
+          retention-days: 90
+
+      - name: Release Asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: klipper_${{ matrix.target.id }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

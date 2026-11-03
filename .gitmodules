@@ -1,0 +1,4 @@
+[submodule "klipper_esp32/components/klipper/klipper"]
+	path = klipper_esp32/components/klipper/klipper
+	url = https://github.com/nikhil-robinson/klipper.git
+

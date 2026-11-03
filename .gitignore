@@ -1,0 +1,18 @@
+# Build directories
+klipper_esp32/build/
+klipper_esp32/.cache/
+klipper_esp32/sdkconfig
+klipper_esp32/components/klipper/klipper/out/
+binaries/
+release_*/
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS & Editors
+.DS_Store
+.vscode/
+.idea/
+
