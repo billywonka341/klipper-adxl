@@ -8,6 +8,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build for ${{ matrix.target.name }}
@@ -86,29 +89,13 @@ jobs:
             cp "${{ matrix.target.config_file }}" "$PACKAGE_DIR/"
           fi
           
-          # Create automated flasher script for users
-          cat << 'EOF' > "$PACKAGE_DIR/flash.sh"
-#!/usr/bin/env bash
-PORT=${1:-/dev/ttyUSB0}
-echo "Flashing to port: $PORT"
-esptool.py --chip ${{ matrix.target.chip }} -p "$PORT" -b 460800 \
-  --before=default_reset --after=hard_reset write_flash \
-  --flash_mode dio --flash_freq 80m 0x1000 bootloader.bin 0x10000 klipper.bin 0x8000 partition-table.bin
-EOF
+          # Generate flash scripts from templates
+          sed "s/__CHIP__/${{ matrix.target.chip }}/g" scripts/flash_template.sh > "$PACKAGE_DIR/flash.sh"
           chmod +x "$PACKAGE_DIR/flash.sh"
+          sed "s/__CHIP__/${{ matrix.target.chip }}/g" scripts/flash_template.bat > "$PACKAGE_DIR/flash.bat"
 
-          # Create automated Windows flash.bat
-          cat << 'EOF' > "$PACKAGE_DIR/flash.bat"
-@echo off
-set PORT=%1
-if "%PORT%"=="" set PORT=COM3
-echo Flashing to port: %PORT%
-esptool.py --chip ${{ matrix.target.chip }} -p %PORT% -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_freq 80m 0x1000 bootloader.bin 0x10000 klipper.bin 0x8000 partition-table.bin
-pause
-EOF
-
-          # Zip package
-          zip -r "klipper_${{ matrix.target.id }}.zip" "$PACKAGE_DIR"
+          # Create zip package using python3 zipfile module
+          python3 -m zipfile -c "klipper_${{ matrix.target.id }}.zip" "$PACKAGE_DIR"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -124,4 +111,3 @@ EOF
           files: klipper_${{ matrix.target.id }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
