@@ -58,7 +58,7 @@ if(NOT EXISTS ${CTR_FILE})
 #include "command.h"
 
 const struct command_parser command_index[] = {};
-const uint8_t command_index_size = 0;
+const uint16_t command_index_size = 0;
 const uint8_t command_identify_data[] = {0};
 const uint32_t command_identify_size = 0;
 

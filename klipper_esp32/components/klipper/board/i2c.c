@@ -12,6 +12,7 @@
 #include "internal.h" // pclock, gpio_peripheral
 #include "misc.h"     // timer_is_before
 #include "command.h"        // shutdown
+#include "i2ccmds.h"  // I2C_BUS_SUCCESS, I2C_BUS_NACK
 #include "driver/i2c_master.h"
 #include "sched.h" // sched_shutdown
 #include "soc/clk_tree_defs.h"
@@ -66,11 +67,19 @@ struct i2c_config i2c_setup(uint32_t bus, uint32_t rate, uint8_t addr) {
   return (struct i2c_config){.handle = dev_handle};
 }
 
-void i2c_write(struct i2c_config config, uint8_t write_len, uint8_t *write) {
-  i2c_master_transmit(config.handle, write, write_len, -1);
+int i2c_write(struct i2c_config config, uint8_t write_len, uint8_t *write) {
+  esp_err_t ret = i2c_master_transmit(config.handle, write, write_len, -1);
+  if (ret != ESP_OK) {
+    return I2C_BUS_NACK;
+  }
+  return I2C_BUS_SUCCESS;
 }
 
-void i2c_read(struct i2c_config config, uint8_t reg_len, uint8_t *reg,
-              uint8_t read_len, uint8_t *read) {
-  i2c_master_transmit_receive(config.handle, reg, reg_len, read, read_len, -1);
+int i2c_read(struct i2c_config config, uint8_t reg_len, uint8_t *reg,
+             uint8_t read_len, uint8_t *read) {
+  esp_err_t ret = i2c_master_transmit_receive(config.handle, reg, reg_len, read, read_len, -1);
+  if (ret != ESP_OK) {
+    return I2C_BUS_NACK;
+  }
+  return I2C_BUS_SUCCESS;
 }
